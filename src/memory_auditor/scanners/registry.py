@@ -204,6 +204,42 @@ def scan_skill_candidates(docs: list[Document], _ctx: AuditContext) -> list[Find
     return findings
 
 
+def scan_possible_contradictions(docs: list[Document], ctx: AuditContext) -> list[Finding]:
+    if not ctx.config.contradiction_review:
+        return []
+
+    # Offline second pass: find simple declarative facts with the same subject and conflicting values.
+    # This is intentionally conservative; future model adapters can consume the same finding shape.
+    fact_re = re.compile(r"^\s*(?P<subject>[A-Z][A-Za-z0-9 _.-]{3,80}?)\s+(?:is|=)\s+(?P<value>[^.\n]+)", re.I)
+    facts: dict[str, tuple[Document, int, str]] = {}
+    findings: list[Finding] = []
+    for doc in docs:
+        for idx, line in enumerate(doc.lines, 1):
+            match = fact_re.match(line)
+            if not match:
+                continue
+            subject = _normalize(match.group("subject"))
+            value = _normalize(match.group("value"))
+            if not subject or not value:
+                continue
+            previous = facts.get(subject)
+            if previous and previous[2] != value:
+                findings.append(
+                    Finding(
+                        severity="medium",
+                        category="possible-contradiction",
+                        path=str(doc.path),
+                        line=idx,
+                        snippet=line.strip()[:260],
+                        reason=f"Potentially contradicts {previous[0].path}:{previous[1]}; same subject has different values.",
+                        suggested_action="Review both entries; keep the current fact and delete or supersede the stale one.",
+                    )
+                )
+            else:
+                facts[subject] = (doc, idx, value)
+    return findings
+
+
 SCANNERS = [
     scan_secrets,
     scan_imperatives,
@@ -212,12 +248,26 @@ SCANNERS = [
     scan_repo_paths,
     scan_naming_drift,
     scan_skill_candidates,
+    scan_possible_contradictions,
 ]
+
+
+def _filtered(findings: list[Finding], ctx: AuditContext) -> list[Finding]:
+    kept: list[Finding] = []
+    for finding in findings:
+        text = f"{finding.snippet}\n{finding.reason}\n{finding.suggested_action}"
+        if any(rule.matches(category=finding.category, path=finding.path, text=text) for rule in ctx.config.allowlist):
+            continue
+        if any(rule.matches(category=finding.category, path=finding.path, text=text) for rule in ctx.config.suppressions):
+            continue
+        kept.append(finding)
+    return kept
 
 
 def run_scanners(docs: list[Document], ctx: AuditContext) -> list[Finding]:
     findings: list[Finding] = []
     for scanner in SCANNERS:
         findings.extend(scanner(docs, ctx))
+    findings = _filtered(findings, ctx)
     order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     return sorted(findings, key=lambda f: (order[f.severity], f.category, f.path, f.line or 0))

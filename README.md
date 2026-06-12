@@ -79,6 +79,26 @@ Scan the default Hermes profile:
 memory-audit scan --include-skills
 ```
 
+Scan an OpenClaw memory layout:
+
+```bash
+memory-audit scan --layout openclaw --home ~/.openclaw --include-skills
+```
+
+Scan arbitrary markdown with generic include/exclude globs:
+
+```bash
+memory-audit scan --layout generic --include "**/*.md" --exclude "sessions/**" --exclude "logs/**"
+```
+
+Scan common agent layouts:
+
+```bash
+memory-audit scan --layout claude-code --home ~/.claude
+memory-audit scan --layout codex --home ~/.codex
+memory-audit scan --layout opencode --home ~/.opencode
+```
+
 Write reports somewhere specific:
 
 ```bash
@@ -97,14 +117,62 @@ Fail CI on any finding:
 memory-audit scan --strict
 ```
 
+Write SARIF for GitHub code scanning:
+
+```bash
+memory-audit scan --include-skills --sarif --output-dir reports
+```
+
+Render the terminal report viewer:
+
+```bash
+memory-audit view --include-skills
+```
+
+Emit review-only patch files without applying them:
+
+```bash
+memory-audit scan --suggest-patches --output-dir reports
+```
+
+Run a model-assisted contradiction review through an external command:
+
+```bash
+memory-audit scan --model-command "python reviewer.py"
+```
+
+## Configuration
+
+Pass a TOML config with `--config memory-audit.toml`:
+
+```toml
+[renames]
+oldbrand = "newbrand"
+twit-auto = "agent-poster"
+
+[[allowlist]]
+category = "naming-drift"
+path = "legacy-note.md"
+
+[[suppressions]]
+category = "imperative-memory"
+pattern = "Always test fixture"
+reason = "fixture noise"
+
+[contradiction_review]
+enabled = true
+```
+
 ## Output
 
-Every scan writes three files:
+Every scan writes three files by default, plus optional SARIF and patch suggestions when requested:
 
 ```text
 reports/memory-audit.md
 reports/memory-audit.html
 reports/memory-audit.json
+reports/memory-audit.sarif        # with --sarif
+reports/patches/*.patch          # with --suggest-patches
 ```
 
 Each finding includes:
@@ -170,14 +238,18 @@ Flags old project names and aliases using a small rename map. The initial map in
 
 Finds procedural memory that looks like it should become a reusable `SKILL.md`.
 
+### `possible-contradiction` / `model-contradiction`
+
+`--contradiction-review` enables a conservative offline second pass for simple declarative facts that share a subject but disagree on the value. `--model-command` runs an external model/reviewer command with JSON stdin and imports its JSON findings as `model-contradiction` results.
+
 ## Safety model
 
 Agent Memory Auditor is intentionally boring.
 
 - Read-only by default
-- No automatic edits
+- Safe patch suggestions are emitted as `.patch` files only; source files are not modified
 - No `.env` scanning
-- No session/log scraping in the MVP
+- No session/log scraping
 - No network calls during scan
 - Does not follow symlinks outside the selected Hermes home
 - Caps large file reads
@@ -213,13 +285,17 @@ agent-memory-auditor/
 ├── src/memory_auditor/
 │   ├── cli.py
 │   ├── collectors.py
+│   ├── config.py
 │   ├── models.py
+│   ├── model_review.py
+│   ├── patches.py
 │   ├── report.py
 │   └── scanners/
 │       └── registry.py
 ├── tests/
 │   ├── fixtures/
 │   ├── test_reports_and_cli.py
+│   ├── test_roadmap_features.py
 │   └── test_scanners.py
 ├── .github/workflows/ci.yml
 ├── CHANGELOG.md
@@ -228,15 +304,17 @@ agent-memory-auditor/
 └── pyproject.toml
 ```
 
-## Roadmap
+## Implemented extended features
 
-- OpenClaw memory layout collector
-- Configurable rename map
-- Configurable allowlist / suppressions
-- SARIF output for GitHub code scanning
-- Rich TUI report viewer
-- Model-assisted contradiction review as an optional second pass
-- Safe `suggest-patches` mode that emits patch files without applying them
+- OpenClaw memory layout collector via `--layout openclaw`
+- Generic markdown collector via repeatable `--include` and `--exclude` globs
+- Named agent collectors via `--layout claude-code`, `--layout codex`, and `--layout opencode`
+- Configurable rename map via `[renames]`
+- Configurable allowlist / suppressions via TOML rule blocks
+- SARIF output for GitHub code scanning via `--sarif`
+- Terminal report viewer via `memory-audit view`
+- Optional contradiction review via `--contradiction-review` and external model command import via `--model-command`
+- Safe `--suggest-patches` mode that emits patch files without applying them
 
 ## Philosophy
 

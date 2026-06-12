@@ -121,7 +121,90 @@ code {{ color:#bfdbfe; white-space:pre-wrap; word-break:break-word; }}
     output.write_text(doc, encoding="utf-8")
 
 
-def write_all(findings: list[Finding], output_dir: Path) -> dict[str, Path]:
+def write_sarif(findings: list[Finding], output: Path) -> None:
+    rules = {}
+    results = []
+    for finding in findings:
+        rules.setdefault(
+            finding.category,
+            {
+                "id": finding.category,
+                "name": finding.category,
+                "shortDescription": {"text": finding.category},
+                "fullDescription": {"text": finding.reason},
+                "help": {"text": finding.suggested_action},
+            },
+        )
+        level = "error" if finding.severity in {"critical", "high"} else "warning" if finding.severity == "medium" else "note"
+        results.append(
+            {
+                "ruleId": finding.category,
+                "level": level,
+                "message": {"text": f"{finding.reason} Suggested action: {finding.suggested_action}"},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": finding.path},
+                            "region": {"startLine": finding.line or 1, "snippet": {"text": finding.snippet}},
+                        }
+                    }
+                ],
+            }
+        )
+    sarif = {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Agent Memory Auditor",
+                        "informationUri": "https://github.com/tylerdotai/agent-memory-auditor",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+    output.write_text(json.dumps(sarif, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def render_tui(findings: list[Finding], *, color: bool = True) -> str:
+    summary = summarize(findings)
+    widths = {"sev": 8, "cat": 24, "loc": 42}
+    colors = {
+        "critical": "\033[1;31m",
+        "high": "\033[31m",
+        "medium": "\033[33m",
+        "low": "\033[36m",
+        "reset": "\033[0m",
+    }
+
+    def paint(severity: str, text: str) -> str:
+        if not color:
+            return text
+        return f"{colors.get(severity, '')}{text}{colors['reset']}"
+
+    lines = [
+        "Agent Memory Audit",
+        "=" * 70,
+        f"Findings: {summary['total']}  Severities: {summary['by_severity']}  Categories: {len(summary['by_category'])}",
+        "-" * 70,
+    ]
+    for finding in findings:
+        loc = finding.path if finding.line is None else f"{finding.path}:{finding.line}"
+        lines.append(
+            f"{paint(finding.severity, finding.severity.upper()):<{widths['sev']}} "
+            f"{finding.category:<{widths['cat']}} "
+            f"{loc[:widths['loc']]:<{widths['loc']}}"
+        )
+        lines.append(f"  {finding.snippet}")
+        lines.append(f"  ↳ {finding.suggested_action}")
+    return "\n".join(lines) + "\n"
+
+
+def write_all(findings: list[Finding], output_dir: Path, *, sarif: bool = False) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = {
         "json": output_dir / "memory-audit.json",
@@ -131,4 +214,7 @@ def write_all(findings: list[Finding], output_dir: Path) -> dict[str, Path]:
     write_json(findings, paths["json"])
     write_markdown(findings, paths["markdown"])
     write_html(findings, paths["html"])
+    if sarif:
+        paths["sarif"] = output_dir / "memory-audit.sarif"
+        write_sarif(findings, paths["sarif"])
     return paths
