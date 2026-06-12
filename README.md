@@ -205,7 +205,7 @@ enabled = true
 
 ## Output
 
-Every scan writes three files by default, plus optional SARIF and patch suggestions when requested:
+Every scan writes three files by default, plus optional SARIF and patch suggestions when requested. The HTML report is a presentation-ready review document with an executive summary, triage guidance, methodology notes, category filters, and a finding explorer:
 
 ```text
 reports/memory-audit.md
@@ -289,6 +289,7 @@ Agent Memory Auditor is intentionally boring.
 - Read-only by default
 - All collected documents must resolve under the selected `--home`; generic absolute paths and `../` escapes are ignored
 - Safe patch suggestions are emitted as `.patch` files only; source files are not modified
+- Rename patch suggestions skip historical contexts such as `renamed from`, `formerly`, `previously`, `old name`, and `legacy name`
 - No `.env` scanning
 - No session/log scraping unless explicitly included by a `generic` glob without an exclude
 - No network calls during scan

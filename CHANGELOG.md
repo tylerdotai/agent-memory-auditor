@@ -12,6 +12,8 @@ All notable changes to Agent Memory Auditor will be documented here.
 - Added terminal report viewer via `memory-audit view`.
 - Added offline contradiction review and external model-command review imports.
 - Added safe `--suggest-patches` mode that emits `.patch` files without applying them.
+- Added presentation-ready HTML reports with executive summary, triage guidance, methodology, category distribution, filters, and a finding explorer.
+- Hardened rename patch suggestions so historical rename contexts are not rewritten.
 - Hardened generic collection so absolute include globs and `../` escapes cannot scan outside `--home`.
 - Added positive validation for `--max-file-bytes` and Python 3.10 TOML parsing support via `tomli`.
 - Expanded tests across new layouts, outputs, patch safety, model-command review, path traversal protection, and Python 3.10/3.11/3.12 compatibility.

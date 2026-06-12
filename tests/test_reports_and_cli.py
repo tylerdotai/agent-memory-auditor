@@ -20,7 +20,13 @@ def test_cli_writes_markdown_html_and_json(tmp_path):
     data = json.loads(js.read_text())
     assert data["summary"]["total"] > 0
     assert "example-sensitive-value" not in md.read_text()
-    assert "Agent Memory Audit" in html.read_text()
+    html_text = html.read_text()
+    assert "AI Agent Memory Audit" in html_text
+    assert "Executive summary" in html_text
+    assert "Recommended triage" in html_text
+    assert "Methodology" in html_text
+    assert "Finding explorer" in html_text
+    assert "data-category" in html_text
 
 
 def test_installed_module_help_works():

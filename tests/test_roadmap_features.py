@@ -3,7 +3,8 @@ import json
 from memory_auditor.cli import run
 from memory_auditor.collectors import collect_documents, collect_openclaw_documents
 from memory_auditor.config import AuditConfig, load_config
-from memory_auditor.models import AuditContext
+from memory_auditor.models import AuditContext, Finding
+from memory_auditor.patches import write_patch_suggestions
 from memory_auditor.scanners.registry import run_scanners
 
 
@@ -161,6 +162,42 @@ def test_cli_accepts_generic_include_exclude_and_named_agent_layouts(tmp_path):
         str(tmp_path / "claude-reports"),
     ])
     assert code == 0
+
+
+def test_patch_suggestions_skip_historical_rename_context(tmp_path):
+    memory = tmp_path / "memory.md"
+    memory.write_text(
+        "Agent Poster was renamed from twit-auto in 2026.\nUse twit-auto command here.\n",
+        encoding="utf-8",
+    )
+    findings = [
+        Finding(
+            severity="medium",
+            category="naming-drift",
+            path=str(memory),
+            line=1,
+            snippet="Agent Poster was renamed from twit-auto in 2026.",
+            reason="Uses old name `twit-auto`; known replacement is `agent-poster`.",
+            suggested_action="Replace `twit-auto` with `agent-poster` if the entry is still worth keeping.",
+        ),
+        Finding(
+            severity="medium",
+            category="naming-drift",
+            path=str(memory),
+            line=2,
+            snippet="Use twit-auto command here.",
+            reason="Uses old name `twit-auto`; known replacement is `agent-poster`.",
+            suggested_action="Replace `twit-auto` with `agent-poster` if the entry is still worth keeping.",
+        ),
+    ]
+
+    patches = write_patch_suggestions(findings, tmp_path / "reports")
+
+    assert len(patches) == 1
+    patch_text = patches[0].read_text(encoding="utf-8")
+    assert "renamed from twit-auto" in patch_text
+    assert "renamed from agent-poster" not in patch_text
+    assert "Use agent-poster command here." in patch_text
 
 
 def test_configurable_rename_map_allowlist_and_suppressions(tmp_path):
