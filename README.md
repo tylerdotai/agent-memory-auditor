@@ -19,7 +19,7 @@ AI agents are starting to keep durable memory: user preferences, project convent
 
 Bad memory is not harmless. It gets injected back into future agent context and quietly steers behavior.
 
-Agent Memory Auditor is a read-only static analyzer for persistent AI-agent context. It scans Hermes Agent memory and skills for things that should not live there anymore:
+Agent Memory Auditor is a read-only static analyzer for persistent AI-agent context. It scans Hermes Agent, OpenClaw, Claude Code, Codex, OpenCode, and arbitrary markdown-based agent memory layouts for things that should not live there anymore:
 
 - stale task progress
 - dangerous imperative memories
@@ -30,6 +30,19 @@ Agent Memory Auditor is a read-only static analyzer for persistent AI-agent cont
 - procedures that should be skills instead of memory
 
 It does not edit anything. It produces reports you can review.
+
+## Supported layouts
+
+```text
+hermes       ~/.hermes memory files and optional skills
+openclaw     ~/.openclaw memory, memories, agent-brain-dump, and optional skills
+claude-code  ~/.claude CLAUDE.md, commands/**/*.md, memory/**/*.md, memories/**/*.md
+codex        ~/.codex AGENTS.md, prompts/**/*.md, memory/**/*.md, memories/**/*.md
+opencode     ~/.opencode AGENTS.md, context/**/*.md, memory/**/*.md, memories/**/*.md
+generic      any markdown files matched by --include / --exclude globs
+```
+
+The scanner engine is layout-agnostic. Layout collectors only decide which files become audit documents.
 
 ## What it catches
 
@@ -88,8 +101,10 @@ memory-audit scan --layout openclaw --home ~/.openclaw --include-skills
 Scan arbitrary markdown with generic include/exclude globs:
 
 ```bash
-memory-audit scan --layout generic --include "**/*.md" --exclude "sessions/**" --exclude "logs/**"
+memory-audit scan --layout generic --home ~/.config/some-agent --include "**/*.md" --exclude "sessions/**" --exclude "logs/**"
 ```
+
+`generic` include globs are intentionally rooted under `--home`; absolute paths and `../` escapes are ignored so scans cannot wander outside the selected audit root.
 
 Scan common agent layouts:
 
@@ -140,6 +155,31 @@ Run a model-assisted contradiction review through an external command:
 ```bash
 memory-audit scan --model-command "python reviewer.py"
 ```
+
+The model command receives JSON on stdin and must print a JSON array of finding-like objects. It runs with `shell=False`; shell metacharacters are not interpreted.
+
+## CLI reference
+
+```text
+memory-audit scan [options]
+memory-audit view [options]
+```
+
+Common options:
+
+- `--home PATH` — agent home/root directory to scan
+- `--layout {hermes,openclaw,generic,claude-code,codex,opencode}` — collector layout
+- `--profile NAME` — Hermes profile shortcut when `--home` is not supplied
+- `--include-skills` — include `SKILL.md` files for layouts that support skills
+- `--include GLOB` — generic layout include glob; repeatable
+- `--exclude GLOB` — generic layout exclude glob; repeatable
+- `--config PATH` — TOML config file for renames, allowlist, suppressions, and contradiction review
+- `--max-file-bytes N` — positive per-file byte cap; values less than 1 are rejected
+- `--strict` — return nonzero on any finding
+- `--sarif` — write `memory-audit.sarif`
+- `--suggest-patches` — emit review-only `.patch` files for deterministic fixes
+- `--contradiction-review` — enable the offline contradiction pass
+- `--model-command CMD` — run an external model/reviewer command for contradiction findings
 
 ## Configuration
 
@@ -247,13 +287,15 @@ Finds procedural memory that looks like it should become a reusable `SKILL.md`.
 Agent Memory Auditor is intentionally boring.
 
 - Read-only by default
+- All collected documents must resolve under the selected `--home`; generic absolute paths and `../` escapes are ignored
 - Safe patch suggestions are emitted as `.patch` files only; source files are not modified
 - No `.env` scanning
-- No session/log scraping
+- No session/log scraping unless explicitly included by a `generic` glob without an exclude
 - No network calls during scan
-- Does not follow symlinks outside the selected Hermes home
-- Caps large file reads
-- Redacts secret-shaped strings before writing reports
+- Model-assisted review is opt-in and only runs when `--model-command` is supplied
+- Does not follow symlinks outside the selected agent home
+- Caps large file reads; `--max-file-bytes` must be positive
+- Redacts secret-shaped strings before reports are written
 
 That is the point. The auditor should not become another agent making unreviewed changes to agent memory.
 
@@ -262,6 +304,9 @@ That is the point. The auditor should not become another agent making unreviewed
 ```bash
 uv sync --extra dev
 uv run pytest -q
+uv run --python 3.10 pytest -q
+uv run --python 3.11 pytest -q
+uv run --python 3.12 pytest -q
 uv run ruff check .
 uv run python -m build
 ```
